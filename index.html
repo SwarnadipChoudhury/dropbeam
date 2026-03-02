@@ -2,11 +2,19 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="description" content="DropBeam — Instant P2P file transfer. No servers, no storage." />
   <title>DropBeam — P2P File Transfer</title>
   <link rel="stylesheet" href="style.css" />
+  <!-- PeerJS for WebRTC -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- jsQR for QR scanning -->
   <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+  <!-- QRCode.js for QR generation -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
@@ -28,12 +36,12 @@
 </div>
 
 <!-- Image Preview Modal -->
-<div class="modal-overlay hidden" id="img-preview-modal">
-  <div style="text-align:center">
+<div class="modal-overlay hidden" id="img-preview-modal" onclick="closeImagePreview()">
+  <div style="text-align:center" onclick="event.stopPropagation()">
     <img id="preview-img" src="" alt="Preview"
-      style="max-width:90vw;max-height:80vh;border-radius:12px"/>
-    <br/><br/>
-    <button class="btn btn-ghost" onclick="closeImagePreview()">Close</button>
+      style="max-width:90vw;max-height:75vh;border-radius:12px;display:block;margin:0 auto"/>
+    <br/>
+    <button class="btn btn-ghost" onclick="closeImagePreview()">✕ Close</button>
   </div>
 </div>
 
@@ -43,26 +51,28 @@
   <header>
     <div class="logo">Drop<span>Beam</span><span class="logo-dot"></span></div>
     <div class="header-right">
-      <div class="name-chip" onclick="renameDevice()">
+      <div class="name-chip" onclick="renameDevice()" title="Click to rename device">
         <span id="device-emoji">💻</span>
         <span id="device-name-display">My Device</span>
         <span class="edit-icon">✏️</span>
       </div>
-      <button class="theme-btn" onclick="toggleTheme()">🌙</button>
+      <button class="theme-btn" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
     </div>
   </header>
 
   <!-- HOME -->
   <section class="screen active" id="screen-home">
     <h1 class="hero-title">Send Files.<br/><span class="accent">Instantly.</span></h1>
-    <p class="hero-sub">No servers. No storage. Direct device-to-device transfer.</p>
+    <p class="hero-sub">No servers. No storage. Direct device-to-device transfer over WebRTC.</p>
     <div class="action-cards">
-      <div class="action-card" onclick="goToSend()">
+      <div class="action-card" onclick="goToSend()" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter')goToSend()">
         <div class="card-icon">📤</div>
         <h3>Send Files</h3>
-        <p>Create room & share code</p>
+        <p>Create a room &amp; share code</p>
       </div>
-      <div class="action-card" onclick="goToReceive()">
+      <div class="action-card" onclick="goToReceive()" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter')goToReceive()">
         <div class="card-icon">📥</div>
         <h3>Receive Files</h3>
         <p>Scan QR or enter code</p>
@@ -71,7 +81,7 @@
     <div class="info-bar">
       <div>
         <div class="info-title">🔒 End-to-End Encrypted</div>
-        <div class="info-sub">WebRTC DTLS · No file stored anywhere</div>
+        <div class="info-sub">WebRTC DTLS · No files stored anywhere</div>
       </div>
       <div style="font-size:2rem">🛡️</div>
     </div>
@@ -82,17 +92,19 @@
     <button class="btn btn-ghost back-btn" onclick="goHome()">← Back</button>
     <h2 class="screen-title">Your Room</h2>
     <div class="card">
-      <p class="card-sub">Show this QR to receiver — or share the Room ID</p>
+      <p class="card-sub">Show this QR to the receiver — or share the Room ID below</p>
       <div id="qr-container"></div>
       <div class="room-label">Room ID</div>
-      <div class="room-code" id="room-code-display">Connecting...</div>
+      <div class="room-code" id="room-code-display" onclick="copyRoomCode()" title="Click to copy">
+        Connecting...
+      </div>
       <button class="btn btn-primary" onclick="copyRoomCode()">📋 Copy Room ID</button>
     </div>
     <div class="status-bar">
       <div class="spinner"></div>
       <div>
         <div class="status-title" id="waiting-status">Waiting for receiver...</div>
-        <div class="status-sub">Share the Room ID or QR above</div>
+        <div class="status-sub">Share the Room ID or QR code above</div>
       </div>
     </div>
   </section>
@@ -118,7 +130,7 @@
         <div class="scan-corner br"></div>
       </div>
       <canvas id="scanner-canvas" class="hidden"></canvas>
-      <p class="hint">Point camera at the QR code on the other device</p>
+      <p class="hint">Point your camera at the QR code on the sender's screen</p>
       <button class="btn btn-ghost" onclick="startScan()">🔄 Restart Camera</button>
     </div>
 
@@ -129,9 +141,13 @@
         id="peer-id-input"
         class="peer-id-input"
         placeholder="Paste Room ID here..."
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="none"
+        spellcheck="false"
         onkeydown="if(event.key==='Enter') joinByCode()"
       />
-      <button class="btn btn-primary" onclick="joinByCode()">Connect →</button>
+      <button class="btn btn-primary full-btn" onclick="joinByCode()">Connect →</button>
     </div>
   </section>
 
@@ -140,7 +156,7 @@
 
     <div class="peer-bar">
       <div class="peer-avatar" id="peer-avatar">💻</div>
-      <div style="flex:1">
+      <div style="flex:1;min-width:0">
         <div class="peer-name" id="peer-name-display">Connected Peer</div>
         <div class="connected-badge">
           <div class="connected-dot"></div>
@@ -158,36 +174,39 @@
 
     <!-- Files tab -->
     <div id="tcontent-files" class="tab-content">
-      <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <div id="drop-zone" onclick="document.getElementById('file-input').click()"
+           role="button" tabindex="0" aria-label="Click to select files or drag and drop">
         <div class="drop-icon">🗂️</div>
         <p><strong>Click to select files</strong></p>
-        <p class="hint">or drag & drop · All types · Large files OK</p>
+        <p class="hint">or drag &amp; drop · All file types · No size limit</p>
         <input type="file" id="file-input" class="hidden" multiple />
       </div>
-      <div id="file-queue"></div>
+      <div id="file-queue" style="width:100%;display:flex;flex-direction:column;gap:0.6rem"></div>
       <button class="btn btn-primary full-btn hidden" id="send-btn" onclick="sendFiles()">
         📤 Send Files
       </button>
-      <div id="active-transfers"></div>
+      <div id="active-transfers" style="width:100%;display:flex;flex-direction:column;gap:0.6rem"></div>
     </div>
 
     <!-- Clipboard tab -->
     <div id="tcontent-clip" class="tab-content hidden">
-      <p class="hint">Share text instantly with the other device</p>
+      <p class="hint">Share text instantly with the connected device</p>
       <textarea id="clipboard-text" placeholder="Type or paste text here..."></textarea>
-      <button class="btn btn-primary" onclick="sendClipboard()">📨 Send Text</button>
+      <button class="btn btn-primary full-btn" onclick="sendClipboard()">📨 Send Text</button>
       <div class="divider"></div>
       <div class="section-label">Received Text</div>
       <div id="received-clipboard" class="received-box">Nothing received yet...</div>
-      <button class="btn btn-ghost hidden" id="copy-received-btn" onclick="copyReceivedText()">
-        📋 Copy
+      <button class="btn btn-ghost hidden full-btn" id="copy-received-btn" onclick="copyReceivedText()">
+        📋 Copy Received Text
       </button>
     </div>
 
     <!-- History tab -->
     <div id="tcontent-hist" class="tab-content hidden">
       <div class="section-label">Transfer History (this session)</div>
-      <div id="transfer-history"><p class="hint">No transfers yet.</p></div>
+      <div id="transfer-history" style="width:100%;display:flex;flex-direction:column;gap:0.6rem">
+        <p class="hint">No transfers yet.</p>
+      </div>
     </div>
 
   </section>
