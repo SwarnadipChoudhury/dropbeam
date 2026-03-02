@@ -1,22 +1,15 @@
-// DropBeam — STABLE PRODUCTION VERSION (QR + FILE TRANSFER FIXED)
+// DropBeam — FINAL STABLE VERSION (GitHub Pages Safe)
 
 const CHUNK_SIZE = 64 * 1024;
 
-let peer = null;
-let conn = null;
-let myPeerId = null;
-
+let peer, conn, myPeerId;
 let pendingFiles = [];
 let currentFile = null;
 let sendOffset = 0;
-let transferStartTime = 0;
-
 let incomingMeta = null;
 let incomingChunks = [];
 let incomingReceived = 0;
-
-let activeTransferEl = null;
-
+let transferStartTime = 0;
 let scanInterval = null;
 let videoStream = null;
 
@@ -38,7 +31,7 @@ function initPeer() {
 
   peer.on("open", id => {
     myPeerId = id;
-    console.log("My ID:", id);
+    console.log("My Peer ID:", id);
   });
 
   peer.on("connection", connection => {
@@ -66,22 +59,46 @@ function setupConnection() {
       conn.send(JSON.stringify({ type: "file-accept" }));
       incomingChunks = [];
       incomingReceived = 0;
-      activeTransferEl = makeTransferEl(msg.name, msg.size);
-      document.getElementById("active-transfers").appendChild(activeTransferEl);
     }
 
     if (msg.type === "file-accept") {
-      startSendingChunks();
+      startSending();
     }
 
     if (msg.type === "file-done") {
-      finalizeReceive();
+      finishReceive();
     }
   });
 }
 
 
-// ================= SEND FLOW =================
+// ================= NAVIGATION =================
+function showScreen(name) {
+  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+  document.getElementById("screen-" + name).classList.add("active");
+}
+
+function goToSend() {
+  if (!myPeerId) {
+    showToast("Connecting...");
+    return;
+  }
+  showScreen("send");
+  document.getElementById("room-code-display").textContent = myPeerId;
+  generateQR(myPeerId);
+}
+
+function goToReceive() {
+  showScreen("receive");
+  setTimeout(startScan, 400);
+}
+
+function goHome() {
+  showScreen("home");
+}
+
+
+// ================= FILE SEND =================
 function sendFiles() {
   if (!conn || !conn.open) {
     showToast("Not connected.");
@@ -101,13 +118,13 @@ function sendFiles() {
   }));
 }
 
-function startSendingChunks() {
+function startSending() {
   sendOffset = 0;
   transferStartTime = Date.now();
-  readAndSend();
+  sendChunk();
 }
 
-function readAndSend() {
+function sendChunk() {
   if (sendOffset >= currentFile.size) {
     conn.send(JSON.stringify({ type: "file-done" }));
     showToast("File Sent!");
@@ -115,7 +132,7 @@ function readAndSend() {
   }
 
   if (conn.dataChannel.bufferedAmount > CHUNK_SIZE * 8) {
-    setTimeout(readAndSend, 50);
+    setTimeout(sendChunk, 50);
     return;
   }
 
@@ -125,8 +142,7 @@ function readAndSend() {
   reader.onload = e => {
     conn.send(e.target.result);
     sendOffset += e.target.result.byteLength;
-    updateProgress(sendOffset, currentFile.size);
-    setTimeout(readAndSend, 0);
+    setTimeout(sendChunk, 0);
   };
 
   reader.readAsArrayBuffer(slice);
@@ -137,16 +153,14 @@ function readAndSend() {
 function handleChunk(chunk) {
   incomingChunks.push(chunk);
   incomingReceived += chunk.byteLength;
-  updateProgress(incomingReceived, incomingMeta.size);
 }
 
-function finalizeReceive() {
+function finishReceive() {
   const blob = new Blob(incomingChunks, { type: incomingMeta.mime });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = incomingMeta.name;
   a.click();
-
   showToast("File Received!");
 }
 
@@ -156,7 +170,8 @@ function generateQR(peerId) {
   const container = document.getElementById("qr-container");
   container.innerHTML = "";
 
-  const url = `${location.origin}?room=${peerId}`;
+  // FIXED for GitHub Pages path
+  const url = `${location.origin}${location.pathname}?room=${peerId}`;
 
   new QRCode(container, {
     text: url,
@@ -189,11 +204,7 @@ async function startScan() {
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-    const code = jsQR(
-      imageData.data,
-      imageData.width,
-      imageData.height
-    );
+    const code = jsQR(imageData.data, imageData.width, imageData.height);
 
     if (code && code.data) {
       const match = code.data.match(/room=([A-Za-z0-9_-]+)/);
@@ -222,12 +233,7 @@ function joinRoom(id) {
 }
 
 
-// ================= UI =================
-function showScreen(name) {
-  document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
-  document.getElementById("screen-" + name).classList.add("active");
-}
-
+// ================= TOAST =================
 function showToast(msg) {
   const tc = document.getElementById("toast-container");
   const t = document.createElement("div");
@@ -235,21 +241,4 @@ function showToast(msg) {
   t.textContent = msg;
   tc.appendChild(t);
   setTimeout(() => t.remove(), 3000);
-}
-
-function makeTransferEl(name, size) {
-  const el = document.createElement("div");
-  el.innerHTML = `
-    <div>${name}</div>
-    <div class="progress-wrap">
-      <div class="progress-fill"></div>
-    </div>
-  `;
-  return el;
-}
-
-function updateProgress(done, total) {
-  const fill = document.querySelector(".progress-fill");
-  if (!fill) return;
-  fill.style.width = ((done / total) * 100) + "%";
 }
