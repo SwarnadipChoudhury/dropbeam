@@ -6,8 +6,8 @@
   <title>DropBeam — P2P File Transfer</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 </head>
 <body>
 
@@ -81,20 +81,18 @@
   <section class="screen" id="screen-send">
     <button class="btn btn-ghost back-btn" onclick="goHome()">← Back</button>
     <h2 class="screen-title">Your Room</h2>
-
     <div class="card">
-      <p class="card-sub">Share this QR code or Room ID with the receiver</p>
+      <p class="card-sub">Show this QR to receiver — or share the Room ID</p>
       <div id="qr-container"></div>
       <div class="room-label">Room ID</div>
       <div class="room-code" id="room-code-display">Connecting...</div>
       <button class="btn btn-primary" onclick="copyRoomCode()">📋 Copy Room ID</button>
     </div>
-
     <div class="status-bar">
-      <div class="spinner" id="waiting-spinner"></div>
+      <div class="spinner"></div>
       <div>
         <div class="status-title" id="waiting-status">Waiting for receiver...</div>
-        <div class="status-sub">Share the Room ID above</div>
+        <div class="status-sub">Share the Room ID or QR above</div>
       </div>
     </div>
   </section>
@@ -109,18 +107,22 @@
       <button class="tab-btn" id="tab-code" onclick="switchJoinTab('code')">⌨️ Enter ID</button>
     </div>
 
-    <!-- Scan -->
+    <!-- Scan tab -->
     <div id="join-scan" class="tab-content">
       <div class="scan-wrap">
         <video id="scanner-video" autoplay playsinline muted></video>
         <div class="scan-line"></div>
+        <div class="scan-corner tl"></div>
+        <div class="scan-corner tr"></div>
+        <div class="scan-corner bl"></div>
+        <div class="scan-corner br"></div>
       </div>
       <canvas id="scanner-canvas" class="hidden"></canvas>
+      <p class="hint">Point camera at the QR code on the other device</p>
       <button class="btn btn-ghost" onclick="startScan()">🔄 Restart Camera</button>
-      <p class="hint">Point camera at the QR code</p>
     </div>
 
-    <!-- Code -->
+    <!-- Code tab -->
     <div id="join-code" class="tab-content hidden">
       <p class="hint">Paste the Room ID from the sender's screen</p>
       <input
@@ -154,7 +156,7 @@
       <button class="tab-btn" id="ttab-hist" onclick="switchTransferTab('hist')">🕓 History</button>
     </div>
 
-    <!-- Files -->
+    <!-- Files tab -->
     <div id="tcontent-files" class="tab-content">
       <div id="drop-zone" onclick="document.getElementById('file-input').click()">
         <div class="drop-icon">🗂️</div>
@@ -169,7 +171,7 @@
       <div id="active-transfers"></div>
     </div>
 
-    <!-- Clipboard -->
+    <!-- Clipboard tab -->
     <div id="tcontent-clip" class="tab-content hidden">
       <p class="hint">Share text instantly with the other device</p>
       <textarea id="clipboard-text" placeholder="Type or paste text here..."></textarea>
@@ -182,7 +184,7 @@
       </button>
     </div>
 
-    <!-- History -->
+    <!-- History tab -->
     <div id="tcontent-hist" class="tab-content hidden">
       <div class="section-label">Transfer History (this session)</div>
       <div id="transfer-history"><p class="hint">No transfers yet.</p></div>

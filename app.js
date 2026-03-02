@@ -1,9 +1,7 @@
 // DropBeam — app.js
-// PeerJS for signaling, WebRTC for direct P2P transfer
 
-const CHUNK_SIZE = 64 * 1024; // 64KB
+const CHUNK_SIZE = 64 * 1024;
 
-// ===== STATE =====
 let peer = null;
 let conn = null;
 let myPeerId = null;
@@ -39,12 +37,8 @@ document.addEventListener("DOMContentLoaded", () => {
     addFilesToQueue([...e.target.files]);
   });
 
-  // Drag and drop
   const dz = document.getElementById("drop-zone");
-  dz.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    dz.classList.add("drag-over");
-  });
+  dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("drag-over"); });
   dz.addEventListener("dragleave", () => dz.classList.remove("drag-over"));
   dz.addEventListener("drop", (e) => {
     e.preventDefault();
@@ -62,7 +56,6 @@ document.addEventListener("DOMContentLoaded", () => {
     Promise.all(promises).then(() => addFilesToQueue(files.filter(Boolean)));
   });
 
-  // URL se auto join (QR scan ke baad)
   const params = new URLSearchParams(location.search);
   const roomFromUrl = params.get("room");
   if (roomFromUrl) {
@@ -71,7 +64,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
-// ===== PEERJS INIT =====
+// ===== PEERJS =====
 function initPeer() {
   peer = new Peer({
     host: "0.peerjs.com",
@@ -83,6 +76,8 @@ function initPeer() {
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
         { urls: "stun:stun2.l.google.com:19302" },
+        { urls: "stun:stun3.l.google.com:19302" },
+        { urls: "stun:stun4.l.google.com:19302" },
       ]
     }
   });
@@ -92,20 +87,19 @@ function initPeer() {
     console.log("My Peer ID:", id);
   });
 
-  // Incoming connection (receiver connects to us)
   peer.on("connection", (connection) => {
     conn = connection;
     setupConnection(conn);
   });
 
   peer.on("error", (err) => {
-    console.error("PeerJS error:", err);
+    console.error("PeerJS error:", err.type, err);
     if (err.type === "peer-unavailable") {
       showToast("Room not found. Check the ID and try again.");
-    } else if (err.type === "network") {
-      showToast("Network error. Check your internet connection.");
+    } else if (err.type === "network" || err.type === "server-error") {
+      showToast("Network error. Check your connection.");
     } else {
-      showToast("Connection error: " + err.type);
+      showToast("Error: " + err.type);
     }
   });
 
@@ -117,19 +111,14 @@ function initPeer() {
   });
 }
 
-// ===== CONNECTION SETUP =====
+// ===== CONNECTION =====
 function setupConnection(connection) {
   connection.on("open", () => {
     onPeerConnected();
-    connection.send(JSON.stringify({
-      type: "hello",
-      name: deviceName
-    }));
+    connection.send(JSON.stringify({ type: "hello", name: deviceName }));
   });
 
-  connection.on("data", (data) => {
-    handleData(data);
-  });
+  connection.on("data", (data) => { handleData(data); });
 
   connection.on("close", () => {
     showToast("Peer disconnected.");
@@ -137,12 +126,11 @@ function setupConnection(connection) {
   });
 
   connection.on("error", (err) => {
-    console.error("Connection error:", err);
+    console.error("Conn error:", err);
     showToast("Transfer error. Please reconnect.");
   });
 }
 
-// ===== PEER CONNECTED =====
 function onPeerConnected() {
   stopCamera();
   showScreen("transfer");
@@ -151,10 +139,7 @@ function onPeerConnected() {
 
 // ===== DATA HANDLER =====
 function handleData(data) {
-  if (data instanceof ArrayBuffer) {
-    handleChunk(data);
-    return;
-  }
+  if (data instanceof ArrayBuffer) { handleChunk(data); return; }
 
   let msg;
   try { msg = JSON.parse(data); } catch { return; }
@@ -165,36 +150,25 @@ function handleData(data) {
       document.getElementById("peer-avatar").textContent =
         /phone|iphone|android/i.test(msg.name) ? "📱" : "💻";
       break;
-
     case "file-meta":
       incomingMeta = msg;
       document.getElementById("file-request-desc").textContent =
         `"${msg.name}" (${formatBytes(msg.size)})`;
       document.getElementById("file-request-modal").classList.remove("hidden");
       break;
-
     case "file-accept":
       startSendingChunks();
       break;
-
     case "file-reject":
       showToast("File was rejected by receiver.");
       pendingFiles.shift();
       updateQueueUI();
       break;
-
-    case "file-done":
-      break;
-
     case "file-cancel":
       showToast("Transfer cancelled by sender.");
       resetIncoming();
-      if (activeTransferEl) {
-        activeTransferEl.remove();
-        activeTransferEl = null;
-      }
+      if (activeTransferEl) { activeTransferEl.remove(); activeTransferEl = null; }
       break;
-
     case "clipboard":
       lastReceivedText = msg.text;
       document.getElementById("received-clipboard").textContent = msg.text;
@@ -205,22 +179,16 @@ function handleData(data) {
   }
 }
 
-// ===== SCREEN NAV =====
+// ===== NAVIGATION =====
 function showScreen(name) {
   document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
   document.getElementById("screen-" + name).classList.add("active");
 }
 
-function goHome() {
-  cleanup();
-  showScreen("home");
-}
+function goHome() { cleanup(); showScreen("home"); }
 
 function goToSend() {
-  if (!peer) {
-    showToast("Still initializing. Please wait...");
-    return;
-  }
+  if (!peer) { showToast("Still initializing. Please wait..."); return; }
   if (!myPeerId) {
     showToast("Connecting to server. Please wait...");
     setTimeout(goToSend, 1000);
@@ -233,21 +201,21 @@ function goToSend() {
 
 function goToReceive() {
   showScreen("receive");
-  setTimeout(() => startScan(), 400);
+  setTimeout(() => startScan(), 500);
 }
 
-// ===== QR CODE =====
+// ===== QR GENERATE =====
 function generateQR(peerId) {
   const container = document.getElementById("qr-container");
   container.innerHTML = "";
   const url = `${location.origin}?room=${peerId}`;
   new QRCode(container, {
     text: url,
-    width: 200,
-    height: 200,
+    width: 220,
+    height: 220,
     colorDark: "#000000",
     colorLight: "#ffffff",
-    correctLevel: QRCode.CorrectLevel.M
+    correctLevel: QRCode.CorrectLevel.H
   });
 }
 
@@ -255,51 +223,73 @@ function generateQR(peerId) {
 async function startScan() {
   if (videoStream) {
     videoStream.getTracks().forEach(t => t.stop());
+    videoStream = null;
   }
+  if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
+
+  const video = document.getElementById("scanner-video");
+  const canvas = document.getElementById("scanner-canvas");
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
   try {
     videoStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment" }
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
     });
-    const video = document.getElementById("scanner-video");
+
     video.srcObject = videoStream;
-    await video.play();
+    video.setAttribute("playsinline", true);
 
-    const canvas = document.getElementById("scanner-canvas");
-    const ctx = canvas.getContext("2d");
+    await new Promise((resolve) => {
+      video.onloadedmetadata = () => video.play().then(resolve).catch(resolve);
+    });
 
-    if (scanInterval) clearInterval(scanInterval);
+    await new Promise(r => setTimeout(r, 1000));
+
     scanInterval = setInterval(() => {
-      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      if (video.readyState < video.HAVE_ENOUGH_DATA) return;
+      if (video.paused || video.ended) return;
+      if (!video.videoWidth || !video.videoHeight) return;
+
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
-      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imgData.data, canvas.width, canvas.height);
-      if (code?.data) {
-        const match = code.data.match(/room=([A-Za-z0-9\-]+)/);
-        if (match) {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, canvas.width, canvas.height, {
+        inversionAttempts: "attemptBoth"
+      });
+
+      if (code && code.data) {
+        console.log("QR detected:", code.data);
+        const match = code.data.match(/room=([A-Za-z0-9_\-]+)/);
+        if (match && match[1]) {
           clearInterval(scanInterval);
+          scanInterval = null;
           stopCamera();
           showToast("QR code scanned!");
           joinRoom(match[1]);
         }
       }
-    }, 250);
-  } catch (e) {
-    showToast("Camera not available. Use Enter ID tab.");
+    }, 100);
+
+  } catch (err) {
+    console.error("Camera error:", err);
+    if (err.name === "NotAllowedError") {
+      showToast("Camera permission denied. Use Enter ID tab.");
+    } else {
+      showToast("Camera not available. Use Enter ID tab.");
+    }
     switchJoinTab("code");
   }
 }
 
 function stopCamera() {
-  if (videoStream) {
-    videoStream.getTracks().forEach(t => t.stop());
-    videoStream = null;
-  }
-  if (scanInterval) {
-    clearInterval(scanInterval);
-    scanInterval = null;
-  }
+  if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
+  if (scanInterval) { clearInterval(scanInterval); scanInterval = null; }
 }
 
 function switchJoinTab(tab) {
@@ -311,41 +301,27 @@ function switchJoinTab(tab) {
   else stopCamera();
 }
 
-// ===== JOIN ROOM =====
+// ===== JOIN =====
 function joinByCode() {
-  const input = document.getElementById("peer-id-input");
-  const id = input.value.trim();
-  if (!id) {
-    showToast("Please enter a Room ID.");
-    return;
-  }
+  const id = document.getElementById("peer-id-input").value.trim();
+  if (!id) { showToast("Please enter a Room ID."); return; }
   joinRoom(id);
 }
 
 function joinRoom(peerId) {
-  if (!peer) {
-    showToast("Please wait, still initializing...");
-    return;
-  }
+  if (!peer) { showToast("Please wait, initializing..."); return; }
   showToast("Connecting...");
-  conn = peer.connect(peerId, {
-    reliable: true,
-    serialization: "none"
-  });
+  conn = peer.connect(peerId, { reliable: true, serialization: "none" });
   setupConnection(conn);
 }
 
 // ===== FILE QUEUE =====
-function addFilesToQueue(files) {
-  pendingFiles.push(...files);
-  updateQueueUI();
-}
+function addFilesToQueue(files) { pendingFiles.push(...files); updateQueueUI(); }
 
 function updateQueueUI() {
   const queueEl = document.getElementById("file-queue");
   const sendBtn = document.getElementById("send-btn");
   queueEl.innerHTML = "";
-
   pendingFiles.forEach((f, i) => {
     const el = document.createElement("div");
     el.className = "file-item";
@@ -359,30 +335,20 @@ function updateQueueUI() {
     `;
     queueEl.appendChild(el);
   });
-
   sendBtn.classList.toggle("hidden", pendingFiles.length === 0);
 }
 
-function removeFile(i) {
-  pendingFiles.splice(i, 1);
-  updateQueueUI();
-}
+function removeFile(i) { pendingFiles.splice(i, 1); updateQueueUI(); }
 
 function sendFiles() {
   if (!pendingFiles.length) return;
-  if (!conn || !conn.open) {
-    showToast("Not connected to any peer.");
-    return;
-  }
+  if (!conn || !conn.open) { showToast("Not connected to any peer."); return; }
   sendNextFile();
 }
 
 // ===== SENDING =====
 function sendNextFile() {
-  if (!pendingFiles.length) {
-    showToast("All files sent successfully!");
-    return;
-  }
+  if (!pendingFiles.length) { showToast("All files sent!"); return; }
   currentFile = pendingFiles[0];
   conn.send(JSON.stringify({
     type: "file-meta",
@@ -390,7 +356,7 @@ function sendNextFile() {
     size: currentFile.size,
     mime: currentFile.type || "application/octet-stream"
   }));
-  showToast(`Requesting to send: ${currentFile.name}`);
+  showToast(`Requesting: ${currentFile.name}`);
 }
 
 function startSendingChunks() {
@@ -405,22 +371,10 @@ function startSendingChunks() {
 }
 
 function readAndSend() {
-  if (isCancelled) {
-    conn.send(JSON.stringify({ type: "file-cancel" }));
-    resetSending();
-    return;
-  }
-  if (isPaused) {
-    setTimeout(readAndSend, 200);
-    return;
-  }
-  if (sendOffset >= currentFile.size) {
-    conn.send(JSON.stringify({ type: "file-done" }));
-    finalizeSend();
-    return;
-  }
+  if (isCancelled) { conn.send(JSON.stringify({ type: "file-cancel" })); resetSending(); return; }
+  if (isPaused) { setTimeout(readAndSend, 200); return; }
+  if (sendOffset >= currentFile.size) { conn.send(JSON.stringify({ type: "file-done" })); finalizeSend(); return; }
 
-  // Buffer control — don't overflow channel
   if (conn.dataChannel && conn.dataChannel.bufferedAmount > CHUNK_SIZE * 16) {
     setTimeout(readAndSend, 50);
     return;
@@ -434,26 +388,19 @@ function readAndSend() {
       sendOffset += e.target.result.byteLength;
       updateProgress(activeTransferEl, sendOffset, currentFile.size);
       setTimeout(readAndSend, 0);
-    } catch (err) {
-      setTimeout(readAndSend, 500);
-    }
+    } catch (err) { setTimeout(readAndSend, 500); }
   };
   reader.readAsArrayBuffer(slice);
 }
 
 function finalizeSend() {
   addHistory("📤 Sent", currentFile.name, currentFile.size);
-  showToast(`${currentFile.name} sent successfully!`);
-
+  showToast(`${currentFile.name} sent!`);
   if (activeTransferEl) {
     activeTransferEl.querySelector(".progress-fill").style.width = "100%";
     activeTransferEl.querySelector(".file-size").textContent = "✅ Sent!";
-    setTimeout(() => {
-      activeTransferEl?.remove();
-      activeTransferEl = null;
-    }, 3000);
+    setTimeout(() => { activeTransferEl?.remove(); activeTransferEl = null; }, 3000);
   }
-
   pendingFiles.shift();
   currentFile = null;
   updateQueueUI();
@@ -461,12 +408,8 @@ function finalizeSend() {
 }
 
 function resetSending() {
-  currentFile = null;
-  sendOffset = 0;
-  if (activeTransferEl) {
-    activeTransferEl.remove();
-    activeTransferEl = null;
-  }
+  currentFile = null; sendOffset = 0;
+  if (activeTransferEl) { activeTransferEl.remove(); activeTransferEl = null; }
 }
 
 // ===== RECEIVING =====
@@ -475,32 +418,22 @@ function handleChunk(chunk) {
   incomingChunks.push(chunk);
   incomingReceived += chunk.byteLength;
   updateProgress(activeTransferEl, incomingReceived, incomingMeta.size);
-
   if (incomingReceived >= incomingMeta.size) {
     const blob = new Blob(incomingChunks, { type: incomingMeta.mime });
     downloadFile(blob, incomingMeta.name);
     addHistory("📥 Received", incomingMeta.name, incomingMeta.size);
-    showToast(`${incomingMeta.name} received successfully!`);
-
+    showToast(`${incomingMeta.name} received!`);
     if (incomingMeta.mime.startsWith("image/")) showImagePreview(blob);
-
     if (activeTransferEl) {
       activeTransferEl.querySelector(".progress-fill").style.width = "100%";
       activeTransferEl.querySelector(".file-size").textContent = "✅ Received!";
-      setTimeout(() => {
-        activeTransferEl?.remove();
-        activeTransferEl = null;
-      }, 3000);
+      setTimeout(() => { activeTransferEl?.remove(); activeTransferEl = null; }, 3000);
     }
     resetIncoming();
   }
 }
 
-function resetIncoming() {
-  incomingMeta = null;
-  incomingChunks = [];
-  incomingReceived = 0;
-}
+function resetIncoming() { incomingMeta = null; incomingChunks = []; incomingReceived = 0; }
 
 function acceptFile() {
   document.getElementById("file-request-modal").classList.add("hidden");
@@ -521,23 +454,17 @@ function rejectFile() {
   showToast("File rejected.");
 }
 
-// ===== DOWNLOAD =====
 function downloadFile(blob, name) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = name;
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => {
-    URL.revokeObjectURL(a.href);
-    a.remove();
-  }, 10000);
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 10000);
 }
 
-// ===== IMAGE PREVIEW =====
 function showImagePreview(blob) {
-  const url = URL.createObjectURL(blob);
-  document.getElementById("preview-img").src = url;
+  document.getElementById("preview-img").src = URL.createObjectURL(blob);
   document.getElementById("img-preview-modal").classList.remove("hidden");
 }
 
@@ -545,7 +472,7 @@ function closeImagePreview() {
   document.getElementById("img-preview-modal").classList.add("hidden");
 }
 
-// ===== PROGRESS UI =====
+// ===== PROGRESS =====
 function makeTransferEl(name, size, isSender) {
   const el = document.createElement("div");
   el.className = "file-item";
@@ -556,15 +483,11 @@ function makeTransferEl(name, size, isSender) {
       <div class="file-icon">${getFileEmoji(name)}</div>
       <div class="file-info" style="flex:1">
         <div class="file-name">${escHtml(name)}</div>
-        <div class="file-size">
-          ${isSender ? "Sending..." : "Receiving..."} · ${formatBytes(size)}
-        </div>
+        <div class="file-size">${isSender ? "Sending..." : "Receiving..."} · ${formatBytes(size)}</div>
       </div>
       ${isSender ? `
-        <button class="btn btn-ghost small-btn"
-          id="pause-btn" onclick="togglePause(this)">⏸</button>
-        <button class="btn btn-ghost small-btn"
-          onclick="cancelTransfer()">✕</button>
+        <button class="btn btn-ghost small-btn" id="pause-btn" onclick="togglePause(this)">⏸</button>
+        <button class="btn btn-ghost small-btn" onclick="cancelTransfer()">✕</button>
       ` : ""}
     </div>
     <div class="progress-wrap" style="width:100%">
@@ -594,50 +517,39 @@ function updateProgress(el, received, total) {
 function togglePause(btn) {
   isPaused = !isPaused;
   btn.textContent = isPaused ? "▶️" : "⏸";
-  showToast(isPaused ? "Transfer paused." : "Transfer resumed.");
+  showToast(isPaused ? "Paused." : "Resumed.");
 }
 
-function cancelTransfer() {
-  isCancelled = true;
-  showToast("Transfer cancelled.");
-}
+function cancelTransfer() { isCancelled = true; showToast("Transfer cancelled."); }
 
 // ===== CLIPBOARD =====
 function sendClipboard() {
   const text = document.getElementById("clipboard-text").value.trim();
-  if (!text) { showToast("Please enter some text first."); return; }
-  if (!conn || !conn.open) { showToast("Not connected to any peer."); return; }
+  if (!text) { showToast("Please enter some text."); return; }
+  if (!conn || !conn.open) { showToast("Not connected."); return; }
   conn.send(JSON.stringify({ type: "clipboard", text }));
-  showToast("Text sent successfully!");
+  showToast("Text sent!");
   document.getElementById("clipboard-text").value = "";
 }
 
 function copyReceivedText() {
-  navigator.clipboard.writeText(lastReceivedText)
-    .then(() => showToast("Copied to clipboard!"));
+  navigator.clipboard.writeText(lastReceivedText).then(() => showToast("Copied!"));
 }
 
 // ===== HISTORY =====
 function addHistory(direction, name, size) {
-  transferHistory.unshift({
-    direction, name, size,
-    time: new Date().toLocaleTimeString()
-  });
+  transferHistory.unshift({ direction, name, size, time: new Date().toLocaleTimeString() });
   renderHistory();
 }
 
 function renderHistory() {
   const el = document.getElementById("transfer-history");
-  if (!transferHistory.length) {
-    el.innerHTML = `<p class="hint">No transfers yet.</p>`;
-    return;
-  }
+  if (!transferHistory.length) { el.innerHTML = `<p class="hint">No transfers yet.</p>`; return; }
   el.innerHTML = transferHistory.map(h => `
     <div class="history-item">
       <div style="font-size:1.3rem">${h.direction.split(" ")[0]}</div>
       <div style="flex:1">
-        <div style="font-size:0.85rem;font-weight:500;
-          white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        <div style="font-size:0.85rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
           ${escHtml(h.name)}
         </div>
         <div style="font-size:0.72rem;color:var(--text2)">
@@ -648,9 +560,9 @@ function renderHistory() {
   `).join("");
 }
 
-// ===== TAB SWITCHING =====
+// ===== TABS =====
 function switchTransferTab(tab) {
-  ["files", "clip", "hist"].forEach(t => {
+  ["files","clip","hist"].forEach(t => {
     document.getElementById("tcontent-" + t).classList.toggle("hidden", t !== tab);
     document.getElementById("ttab-" + t).classList.toggle("active", t === tab);
   });
@@ -659,7 +571,7 @@ function switchTransferTab(tab) {
 // ===== MISC =====
 function copyRoomCode() {
   navigator.clipboard.writeText(myPeerId)
-    .then(() => showToast("Room ID copied! Share it with the receiver."));
+    .then(() => showToast("Room ID copied! Share with receiver."));
 }
 
 function toggleTheme() {
@@ -676,13 +588,12 @@ function renameDevice() {
     localStorage.setItem("dropbeam-name", deviceName);
     document.getElementById("device-name-display").textContent = deviceName;
     updateDeviceEmoji();
-    showToast("Device renamed to: " + deviceName);
+    showToast("Renamed to: " + deviceName);
   }
 }
 
 function updateDeviceEmoji() {
-  const ua = navigator.userAgent;
-  const isMobile = /iPhone|Android.*Mobile|iPad/i.test(ua);
+  const isMobile = /iPhone|Android.*Mobile|iPad/i.test(navigator.userAgent);
   document.getElementById("device-emoji").textContent = isMobile ? "📱" : "💻";
 }
 
@@ -697,11 +608,7 @@ function guessDeviceName() {
   return "My Device";
 }
 
-function disconnect() {
-  cleanup();
-  showScreen("home");
-  showToast("Disconnected.");
-}
+function disconnect() { cleanup(); showScreen("home"); showToast("Disconnected."); }
 
 function cleanup() {
   stopCamera();
@@ -712,7 +619,6 @@ function cleanup() {
   incomingChunks = [];
 }
 
-// ===== TOAST =====
 function showToast(msg, duration = 3000) {
   const tc = document.getElementById("toast-container");
   const t = document.createElement("div");
@@ -725,40 +631,32 @@ function showToast(msg, duration = 3000) {
 // ===== HELPERS =====
 function formatBytes(b) {
   if (b < 1024) return b + " B";
-  if (b < 1024 ** 2) return (b / 1024).toFixed(1) + " KB";
-  if (b < 1024 ** 3) return (b / 1024 ** 2).toFixed(2) + " MB";
-  return (b / 1024 ** 3).toFixed(2) + " GB";
+  if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+  if (b < 1073741824) return (b / 1048576).toFixed(2) + " MB";
+  return (b / 1073741824).toFixed(2) + " GB";
 }
-
 function formatSpeed(bps) { return formatBytes(bps) + "/s"; }
-
 function formatTime(sec) {
   if (!isFinite(sec) || sec > 3600) return "calculating...";
   if (sec < 60) return Math.ceil(sec) + "s";
   return Math.floor(sec / 60) + "m " + Math.ceil(sec % 60) + "s";
 }
-
 function getFileEmoji(name) {
   const ext = name.split(".").pop().toLowerCase();
   const map = {
-    jpg:"🖼️", jpeg:"🖼️", png:"🖼️", gif:"🖼️", webp:"🖼️", svg:"🖼️",
-    mp4:"🎬", mov:"🎬", avi:"🎬", mkv:"🎬",
-    mp3:"🎵", wav:"🎵", flac:"🎵", aac:"🎵",
-    pdf:"📄", doc:"📝", docx:"📝",
-    xls:"📊", xlsx:"📊", csv:"📊",
-    zip:"🗜️", rar:"🗜️", "7z":"🗜️",
-    js:"💻", ts:"💻", py:"💻", html:"💻", css:"💻",
+    jpg:"🖼️",jpeg:"🖼️",png:"🖼️",gif:"🖼️",webp:"🖼️",svg:"🖼️",
+    mp4:"🎬",mov:"🎬",avi:"🎬",mkv:"🎬",
+    mp3:"🎵",wav:"🎵",flac:"🎵",aac:"🎵",
+    pdf:"📄",doc:"📝",docx:"📝",
+    xls:"📊",xlsx:"📊",csv:"📊",
+    zip:"🗜️",rar:"🗜️","7z":"🗜️",
+    js:"💻",ts:"💻",py:"💻",html:"💻",css:"💻",
   };
   return map[ext] || "📁";
 }
-
 function escHtml(s) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
-
 async function readDir(entry, files) {
   const reader = entry.createReader();
   return new Promise(resolve => {
@@ -772,19 +670,14 @@ async function readDir(entry, files) {
   });
 }
 
-// ===== BACKGROUND ANIMATION =====
+// ===== BACKGROUND =====
 function initBackground() {
   const canvas = document.getElementById("bg-canvas");
   const ctx = canvas.getContext("2d");
   let w, h;
-
-  const resize = () => {
-    w = canvas.width = window.innerWidth;
-    h = canvas.height = window.innerHeight;
-  };
+  const resize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
   resize();
   window.addEventListener("resize", resize);
-
   const dots = Array.from({ length: 55 }, () => ({
     x: Math.random() * window.innerWidth,
     y: Math.random() * window.innerHeight,
@@ -792,30 +685,24 @@ function initBackground() {
     vy: (Math.random() - 0.5) * 0.4,
     r: Math.random() * 1.8 + 0.5,
   }));
-
   function draw() {
     ctx.clearRect(0, 0, w, h);
     const dark = document.documentElement.getAttribute("data-theme") !== "light";
     const dotClr = dark ? "rgba(108,99,255,0.7)" : "rgba(108,99,255,0.35)";
     const lineClr = dark ? "rgba(108,99,255,0.07)" : "rgba(108,99,255,0.05)";
-
     for (let i = 0; i < dots.length; i++) {
       const d = dots[i];
-      d.x += d.vx;
-      d.y += d.vy;
+      d.x += d.vx; d.y += d.vy;
       if (d.x < 0 || d.x > w) d.vx *= -1;
       if (d.y < 0 || d.y > h) d.vy *= -1;
-
       ctx.beginPath();
       ctx.arc(d.x, d.y, d.r, 0, Math.PI * 2);
       ctx.fillStyle = dotClr;
       ctx.fill();
-
       for (let j = i + 1; j < dots.length; j++) {
         const q = dots[j];
-        const dx = d.x - q.x;
-        const dy = d.y - q.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const dx = d.x - q.x, dy = d.y - q.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
         if (dist < 140) {
           ctx.beginPath();
           ctx.moveTo(d.x, d.y);
